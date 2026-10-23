@@ -1,15 +1,28 @@
-/*
-Copyright © 2026 NAME HERE <EMAIL ADDRESS>
-
-*/
 package cmd
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
 
+// Node represents a file or directory in the tree
+type Node struct {
+	Name     string
+	IsDir    bool
+	Children []*Node
+	Err      error
+}
+
+// Global variables to hold our flag values
+var (
+	showAll      bool
+	maxDepth     int
+	ignoreErrors bool
+)
 
 
 // rootCmd represents the base command when called without any subcommands
@@ -28,13 +41,114 @@ Examples:
   iseeall                  # Visualize the current directory
   iseeall /var/log -L 2    # Visualize /var/log up to 2 levels deep
   iseeall -a --ignore-errors ./my-project # Show all files, silently skip unreadable dirs`,
-	// Run: func(cmd *cobra.Command, args []string) {
-	// 	// We will implement the core logic here next!
-	// },
+
+  	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// 1. Determine target directory (default to current directory ".")
+		targetDir := "."
+		if len(args) > 0 {
+			targetDir = args[0]
+		}
+
+
+		// 2. Build the tree in memory
+		// We start at depth 0. (Note: we will handle maxDepth == 0 as "infinite" inside buildTree)
+		rootNode, err := buildTree(targetDir, 0, maxDepth)
+		if err != nil {
+			return err
+		}
+
+		// 3. Print the tree to stdout
+		printTree(rootNode, "", true)
+
+		return nil
+	},
+
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
+func buildTree(dirPath string, currentDepth int, maxDepth int) (*Node, error) {
+	entries, err := os.ReadDir(dirPath)
+	
+	// Handle permission errors gracefully
+	if err != nil {
+		return &Node{
+			Name:  filepath.Base(dirPath),
+			IsDir: true,
+			Err:   err,
+		}, nil 
+	}
+
+	currentNode := &Node{
+		Name:     filepath.Base(dirPath),
+		IsDir:    true,
+		Children: []*Node{},
+	}
+
+	// Check max depth (0 means infinite)
+	if maxDepth > 0 && currentDepth >= maxDepth {
+		return currentNode, nil
+	}
+
+	for _, entry := range entries {
+		// Skip hidden files unless showAll is true
+		if !showAll && strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+
+		childPath := filepath.Join(dirPath, entry.Name())
+
+		if entry.IsDir() {
+			childNode, _ := buildTree(childPath, currentDepth+1, maxDepth)
+			currentNode.Children = append(currentNode.Children, childNode)
+		} else {
+			currentNode.Children = append(currentNode.Children, &Node{
+				Name:  entry.Name(),
+				IsDir: false,
+			})
+		}
+	}
+
+	return currentNode, nil
+}
+
+func printTree(node *Node, prefix string, isLast bool) {
+	// 1. Handle errors on the node (print to stderr, not stdout!)
+	if node.Err != nil {
+		if !ignoreErrors {
+			fmt.Fprintf(os.Stderr, "Warning: %s: %v\n", node.Name, node.Err)
+		}
+		return
+	}
+
+	// 2. Determine the connector
+	connector := "├── "
+	if isLast {
+		connector = "└── "
+	}
+
+	// 3. Print the current node (Root node has no prefix)
+	if prefix == "" {
+		fmt.Println(node.Name)
+	} else {
+		fmt.Println(prefix + connector + node.Name)
+	}
+
+	// 4. Build the prefix for the children
+	childPrefix := prefix
+	if prefix != "" {
+		if isLast {
+			childPrefix += "    " // 4 spaces (no vertical line needed below)
+		} else {
+			childPrefix += "│   " // Vertical line continues down
+		}
+	}
+
+	// 5. Recursively print all children
+	for i, child := range node.Children {
+		isLastChild := (i == len(node.Children)-1)
+		printTree(child, childPrefix, isLastChild)
+	}
+}
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
@@ -43,15 +157,9 @@ func Execute() {
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.iseeall.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.Flags().BoolVarP(&showAll, "all", "a", false, "include hidden files and directories")
+	rootCmd.Flags().IntVarP(&maxDepth, "level", "L", 0, "max display depth of the directory tree (0 for infinite)")
+	rootCmd.Flags().BoolVar(&ignoreErrors, "ignore-errors", false, "do not print permission errors to stderr")
 }
 
 

@@ -1,9 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"github.com/techrook/iseeall/cmd" // Make sure this matches your go.mod module name!
+)
 
-func main (){
-	fmt.Println(("HI User - I see all!"))
-
-	
+func main() {
+	cmd.Execute()
 }
