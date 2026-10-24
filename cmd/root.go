@@ -112,7 +112,7 @@ func buildTree(dirPath string, currentDepth int, maxDepth int) (*Node, error) {
 }
 
 func printTree(node *Node, prefix string, isLast bool) {
-	// 1. Handle errors on the node (print to stderr, not stdout!)
+	// Handle errors
 	if node.Err != nil {
 		if !ignoreErrors {
 			fmt.Fprintf(os.Stderr, "Warning: %s: %v\n", node.Name, node.Err)
@@ -120,32 +120,31 @@ func printTree(node *Node, prefix string, isLast bool) {
 		return
 	}
 
-	// 2. Determine the connector
-	connector := "├── "
-	if isLast {
-		connector = "└── "
-	}
-
-	// 3. Print the current node (Root node has no prefix)
+	// Print the root without a connector
 	if prefix == "" {
 		fmt.Println(node.Name)
 	} else {
+		connector := "├── "
+		if isLast {
+			connector = "└── "
+		}
+
 		fmt.Println(prefix + connector + node.Name)
 	}
 
-	// 4. Build the prefix for the children
+	// Prepare the prefix for the next level
 	childPrefix := prefix
-	if prefix != "" {
+	if prefix != "" || node.Name != "" {
 		if isLast {
-			childPrefix += "    " // 4 spaces (no vertical line needed below)
+			childPrefix += "    "
 		} else {
-			childPrefix += "│   " // Vertical line continues down
+			childPrefix += "│   "
 		}
 	}
 
-	// 5. Recursively print all children
+	// Print children
 	for i, child := range node.Children {
-		isLastChild := (i == len(node.Children)-1)
+		isLastChild := i == len(node.Children)-1
 		printTree(child, childPrefix, isLastChild)
 	}
 }
